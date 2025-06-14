@@ -1,175 +1,106 @@
-import cv2
-from ultralytics import YOLO
+import csv
+import cv2 as cv
+import cvzone as cvz
+from cvzone.HandTrackingModule import HandDetector
+import time
+import datetime
 
-# ✅ Load general YOLOv8 modelhuman_dection
-model = YOLO('yolov8n.pt')  # COCO model with 80 classes
+# Webcam
+cap = cv.VideoCapture(0)
+cap.set(3, 1280)
+cap.set(4, 720)
 
-# ✅ Open webcam
-cap = cv2.VideoCapture(0)
+# Hand detector
+detector = HandDetector(detectionCon=0.8)
 
-# OPTIONAL: use average phone length (e.g., 15 cm) for approximate scaling
-AVG_PHONE_LENGTH_CM = 15
+# MCQ class
+class MCQ:
+    def __init__(self, data):
+        self.question = data[0]
+        self.choices = data[1:5]
+        self.answer = int(data[5])
+        self.userAns = None
 
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
+    def update(self, cursor, bboxs):
+        selected = False
+        for i, box in enumerate(bboxs):
+            x1, y1, x2, y2 = box
+            if x1 < cursor[0] < x2 and y1 < cursor[1] < y2:
+                self.userAns = i + 1
+                cv.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), cv.FILLED)
+                selected = True
+        return selected
 
-    # ✅ Run YOLOv8 detection
-    results = model.predict(frame, save=False, imgsz=640, conf=0.3)
+# Load CSV
+mcqList = []
+with open('data.csv', newline='\n') as file:
+    reader = csv.reader(file)
+    data = list(reader)[1:]
+    for q in data:
+        mcqList.append(MCQ(q))
 
-    # ✅ Loop through detections
-    for r in results:
-        boxes = r.boxes
-        for box in boxes:
-            cls = int(box.cls[0].item())   # class index
-            conf = box.conf[0].item()
-            label = model.names[cls]
-
-            if label == "cell phone":
-                # Box coordinates
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                width_pixels = abs(x2 - x1)
-                height_pixels = abs(y2 - y1)
-
-                # (Optional) Convert to cm using an approximate scale
-                # Here we just assume the longer side is ~15 cm
-                longer_side_pixels = max(width_pixels, height_pixels)
-                pixels_per_cm = longer_side_pixels / AVG_PHONE_LENGTH_CM
-                width_cm = width_pixels / pixels_per_cm
-                height_cm = height_pixels / pixels_per_cm
-
-                # ✅ Draw box & labels
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                cv2.putText(frame, f"{label} {conf:.2f}", (x1, y1 - 20),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-                cv2.putText(frame, f"W: {width_pixels}px ({width_cm:.1f}cm)", (x1, y2 + 20),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
-                cv2.putText(frame, f"H: {height_pixels}px ({height_cm:.1f}cm)", (x1, y2 + 50),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
-
-    # ✅ Show result
-    cv2.imshow("YOLO Phone Detection + Size", frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
-
-
-    
-# ✅ Load YOLOv8 general object detection model (COCO)
-model = YOLO('yolov8n.pt')  # use yolov8n.pt, yolov8s.pt, etc.
-
-# ✅ Open webcam
-cap = cv2.VideoCapture(0)
-
-# Average phone length in cm (optional for approximate scaling)
-AVG_PHONE_LENGTH_CM = 15  # average smartphone length in cm
+totalQ = min(10, len(mcqList))  # Only 10 questions max
+qNo = 0
+confirming = False  # Flag to prevent multiple nexts
 
 while True:
     ret, frame = cap.read()
-    if not ret:
-       break
+    frame = cv.resize(frame, (1280, 720))
+    hands, frame = detector.findHands(frame, flipType=True)
 
-    # ✅ Run YOLOv8 detection
-    results = model(frame)
+    dt = str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+    frame = cv.putText(frame, dt, (900, 50), cv.FONT_HERSHEY_PLAIN, 2, (255, 255, 255), 2)
 
-    for r in results:
-        boxes = r.boxes
-        for box in boxes:
-            cls = int(box.cls[0].item())  # class index
-            conf = box.conf[0].item()
-            label = model.names[cls]
+    if qNo < totalQ:
+        mcq = mcqList[qNo]
 
-            if label == "cell phone":
-                # Get bounding box coordinates
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                width_pixels = abs(x2 - x1)
-                height_pixels = abs(y2 - y1)
+        # Show question & choices
+        frame, _ = cvz.putTextRect(frame, f'Q: {mcq.question}', [50, 100], 2, 2, offset=20, border=2)
+        bboxs = []
+        for i, choice in enumerate(mcq.choices):
+            pos = [100, 200 + i * 100]
+            frame, box = cvz.putTextRect(
+                frame, f"{i+1}) {choice}", pos, 2, 2, offset=20, border=2
+            )
+            bboxs.append(box)
 
-                # (Optional) estimate cm using approximate scale
-                longer_side_pixels = max(width_pixels, height_pixels)
-                pixels_per_cm = longer_side_pixels / AVG_PHONE_LENGTH_CM
-                width_cm = width_pixels / pixels_per_cm
-                height_cm = height_pixels / pixels_per_cm
+        if hands:
+            lmList = hands[0]['lmList']
+            cursor = lmList[8][:2]  # Index fingertip
+            cursor2 = lmList[4][:2]  # Thumb tip
 
-                # ✅ Draw the bounding box
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            # Update choice selection freely
+            mcq.update(cursor, bboxs)
 
-                # ✅ Draw label and confidence
-                cv2.putText(frame, f"{label} {conf:.2f}",
-                            (x1, y1 - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.8,
-                            (0, 255, 0), 2)
+            # Correct: get 3 returns!
+            length, info, frame = detector.findDistance(cursor, cursor2, frame)
 
-                # ✅ Draw size info below box
-                cv2.putText(frame, f"W: {width_pixels}px ({width_cm:.1f}cm)",
-                            (x1, y2 + 20),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7,
-                            (255, 0, 0), 2)
+            # Pinch to confirm & move to next question
+            if length < 40:
+                if not confirming:
+                    qNo += 1
+                    confirming = True
+                    time.sleep(0.5)
+            else:
+                confirming = False
 
-                cv2.putText(frame, f"H: {height_pixels}px ({height_cm:.1f}cm)",
-                            (x1, y2 + 50),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7,
-                            (255, 0, 0), 2)
+    else:
+        # Show final result
+        score = sum(1 for m in mcqList[:totalQ] if m.answer == m.userAns)
+        percent = int(score / totalQ * 100)
+        frame, _ = cvz.putTextRect(frame, f'Quiz Completed!', [400, 200], 2, 2, offset=20, border=3)
+        frame, _ = cvz.putTextRect(frame, f'Score: {score}/{totalQ} ({percent}%)', [400, 300], 2, 2, offset=20, border=3)
+        frame, _ = cvz.putTextRect(frame, f'Press Q to Exit', [400, 400], 2, 2, offset=20, border=3)
 
-    # ✅ Display the result
-    cv2.imshow("YOLOv8 Phone Detection + Size + Boxes", frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
-    
-# Average reference length for approximate scale (optional)
-# For general object detection, you can skip this or use any average for rough scale
-AVG_REF_LENGTH_CM = 15  # adjust as needed
+    # Progress bar
+    barVal = int(950 / totalQ * qNo)
+    cv.rectangle(frame, (150, 650), (150 + barVal, 680), (0, 255, 0), cv.FILLED)
+    cv.rectangle(frame, (150, 650), (1100, 680), (255, 255, 255), 3)
+    frame, _ = cvz.putTextRect(frame, f'{int((qNo/totalQ)*100)}%', [1150, 640], 2, 2, offset=10, border=3)
 
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
-
-    # ✅ Run YOLOv8 detection
-    results = model(frame)
-
-    for r in results:
-        boxes = r.boxes
-        for box in boxes:
-            cls = int(box.cls[0].item())  # class index
-            conf = box.conf[0].item()
-            label = model.names[cls]
-
-            # Get bounding box coordinates
-            x1, y1, x2, y2 = map(int, box.xyxy[0])
-            width_pixels = abs(x2 - x1)
-            height_pixels = abs(y2 - y1)
-
-            # Optional: approximate cm using longest side as rough scale
-            longer_side_pixels = max(width_pixels, height_pixels)
-            pixels_per_cm = longer_side_pixels / AVG_REF_LENGTH_CM
-            width_cm = width_pixels / pixels_per_cm
-            height_cm = height_pixels / pixels_per_cm
-
-            # ✅ Draw bounding box
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-
-            # ✅ Label with object name & confidence
-            cv2.putText(frame, f"{label} {conf:.2f}",
-                        (x1, y1 - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.8,
-                        (0, 255, 0), 2)
-
-            # ✅ Display width & height below box
-            cv2.putText(frame, f"W: {width_pixels}px ({width_cm:.1f}cm)",
-                        (x1, y2 + 20),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7,
-                        (255, 0, 0), 2)
-
-            cv2.putText(frame, f"H: {height_pixels}px ({height_cm:.1f}cm)",
-                        (x1, y2 + 50),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7,
-                        (255, 0, 0), 2)
-
-    # ✅ Show frame
-    cv2.imshow("YOLOv8 ALL Objects + Box Size", frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
+    cv.imshow("MCQ Quiz", frame)
+    if cv.waitKey(1) & 0xFF == ord('q'):
         break
 
 cap.release()
-cv2.destroyAllWindows()
+cv.destroyAllWindows()
