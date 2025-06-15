@@ -1,0 +1,13 @@
+hand_speed,eye_contact,head_tilt,pose_distance,label
+12.5,1,0.10,0.50,Energetic
+1.2,0,0.30,0.20,Shy
+8.7,1,0.05,0.45,Relaxed
+15.0,1,0.08,0.55,Energetic
+2.5,0,0.20,0.25,Shy
+5.3,1,0.10,0.35,Focused
+0.9,0,0.25,0.22,Shy
+10.2,1,0.12,0.40,Energetic
+3.0,1,0.15,0.33,Relaxed
+6.1,1,0.09,0.38,Focused
+11.5,1,0.07,0.50,Energetic
+4.0,0,0.22,0.30,Shy 
