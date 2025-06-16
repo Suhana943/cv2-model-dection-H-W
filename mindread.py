@@ -3,7 +3,7 @@ import mediapipe as mp
 import math
 import time
 
-# Mediapipe setup
+
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(max_num_hands=1)
 mp_drawing = mp.solutions.drawing_utils
